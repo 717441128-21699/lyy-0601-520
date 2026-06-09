@@ -22,13 +22,29 @@ import type { Song } from '../types';
 
 export function AudioImport() {
   const { songs, currentSongId, removeSong, setCurrentSong, getCurrentSong } = useProjectStore();
-  const { loadSongAudio, isLoading, bpmResult, waveformData, currentTime, duration, isPlaying, togglePlay, seekTo, currentAudioBuffer } = useAudioStore();
+  const { loadSongAudio, isLoading, bpmResult, waveformData, currentTime, duration, isPlaying, togglePlay, seekTo, currentAudioBuffer, play, pause } = useAudioStore();
   
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [songInfo, setSongInfo] = useState<Partial<Song> | null>(null);
 
   const currentSong = getCurrentSong();
+
+  const generateSimulatedWaveform = (length = 500) => {
+    const data: number[] = [];
+    for (let i = 0; i < length; i++) {
+      const progress = i / length;
+      const base = 0.3 + Math.sin(progress * Math.PI * 4) * 0.2;
+      const variation = Math.random() * 0.4;
+      data.push(Math.min(1, Math.max(0.05, base + variation)));
+    }
+    return data;
+  };
+
+  const displayWaveform = waveformData.length > 0 
+    ? waveformData 
+    : (currentSong ? generateSimulatedWaveform() : []);
+  const displayDuration = duration || currentSong?.duration || 0;
 
   useEffect(() => {
     if (currentSongId && !currentAudioBuffer) {
@@ -39,6 +55,7 @@ export function AudioImport() {
   useEffect(() => {
     if (currentSong) {
       setSongInfo(currentSong);
+      useAudioStore.getState().setDuration(currentSong.duration);
     }
   }, [currentSong]);
 
@@ -98,7 +115,8 @@ export function AudioImport() {
   };
 
   const handleWaveformClick = (ratio: number) => {
-    const actualTime = ratio * (duration || 1);
+    const actualDuration = duration || currentSong?.duration || 0;
+    const actualTime = ratio * Math.max(actualDuration, 1);
     seekTo(actualTime);
   };
 
@@ -139,7 +157,7 @@ export function AudioImport() {
         />
         <StatCard
           title="总时长"
-          value={formatTime(duration || 0)}
+          value={formatTime(displayDuration || 0)}
           icon={Play}
           color="yellow"
           delay={0.4}
@@ -204,7 +222,7 @@ export function AudioImport() {
       </motion.div>
 
       <AnimatePresence>
-        {waveformData.length > 0 && (
+        {(waveformData.length > 0 || currentSong) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -225,7 +243,7 @@ export function AudioImport() {
                 </button>
                 <div>
                   <p className="text-white font-mono">{formatTime(currentTime)}</p>
-                  <p className="text-xs text-gray-500 font-mono">/ {formatTime(duration || 0)}</p>
+                  <p className="text-xs text-gray-500 font-mono">/ {formatTime(displayDuration || 0)}</p>
                 </div>
               </div>
               {bpmResult && (
@@ -244,11 +262,11 @@ export function AudioImport() {
               )}
             </div>
             <Waveform
-              data={waveformData}
-              color="#00f0ff"
+              data={displayWaveform}
+              color={waveformData.length > 0 ? "#00f0ff" : "#888888"}
               height={150}
               showCursor
-              cursorPosition={currentTime / (duration || 1)}
+              cursorPosition={currentTime / Math.max(displayDuration, 1)}
               onClick={handleWaveformClick}
             />
           </motion.div>

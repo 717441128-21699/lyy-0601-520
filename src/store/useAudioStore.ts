@@ -17,6 +17,8 @@ interface AudioState {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+  isSimulatedPlayback: boolean;
+  playbackSpeed: number;
   
   initAudioContext: () => void;
   closeAudioContext: () => void;
@@ -34,15 +36,21 @@ interface AudioState {
   setVolume: (volume: number) => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
+  setPlaybackSpeed: (speed: number) => void;
   
   importAudioFile: (file: File, projectId: string) => Promise<Song>;
   batchImportAudioFiles: (files: File[], projectId: string, onProgress?: (current: number, total: number) => void) => Promise<Song[]>;
   loadSongAudio: (songId: string) => Promise<void>;
   
+  startSimulatedPlayback: () => void;
+  stopSimulatedPlayback: () => void;
+  
   clear: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
+
+let simulatedPlaybackInterval: ReturnType<typeof setInterval> | null = null;
 
 export const useAudioStore = create<AudioState>((set, get) => ({
   audioContext: null,
@@ -58,6 +66,8 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   currentTime: 0,
   duration: 0,
   isPlaying: false,
+  isSimulatedPlayback: false,
+  playbackSpeed: 1,
   
   initAudioContext: () => {
     if (!get().audioContext) {
@@ -138,57 +148,105 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
   
   play: () => {
-    const { audioContext, currentAudioBuffer, gainNode, volume, currentTime } = get();
-    if (!audioContext || !currentAudioBuffer) return;
+    const { audioContext, currentAudioBuffer, gainNode, volume, currentTime, duration, playbackSpeed, isSimulatedPlayback } = get();
     
     get().stop();
     
-    const source = audioContext.createBufferSource();
-    source.buffer = currentAudioBuffer;
-    source.connect(gainNode!);
+    if (currentAudioBuffer && audioContext) {
+      const source = audioContext.createBufferSource();
+      source.buffer = currentAudioBuffer;
+      source.connect(gainNode!);
+      
+      if (gainNode) {
+        gainNode.gain.value = volume;
+      }
+      
+      source.playbackRate.value = playbackSpeed;
+      source.start(0, currentTime);
+      set({ currentSource: source, isPlaying: true, isSimulatedPlayback: false });
+      
+      const startTime = audioContext.currentTime;
+      const startOffset = currentTime;
+      
+      const updateTime = () => {
+        const state = get();
+        if (state.isPlaying && state.currentSource === source) {
+          const elapsed = state.audioContext?.currentTime ? state.audioContext.currentTime - startTime : 0;
+          const newTime = Math.min(startOffset + elapsed * playbackSpeed, state.currentAudioBuffer?.duration || duration || 0);
+          set({ currentTime: newTime });
+          requestAnimationFrame(updateTime);
+        }
+      };
+      requestAnimationFrame(updateTime);
+      
+      source.onended = () => {
+        const state = get();
+        if (state.currentSource === source) {
+          set({ currentSource: null, isPlaying: false, currentTime: 0 });
+        }
+      };
+    } else {
+      get().startSimulatedPlayback();
+    }
+  },
+  
+  startSimulatedPlayback: () => {
+    const { currentTime, duration, playbackSpeed } = get();
     
-    if (gainNode) {
-      gainNode.gain.value = volume;
+    if (simulatedPlaybackInterval) {
+      clearInterval(simulatedPlaybackInterval);
     }
     
-    source.start(0, currentTime);
-    set({ currentSource: source, isPlaying: true });
+    let localTime = currentTime;
+    const startTime = performance.now();
     
-    const startTime = audioContext.currentTime;
-    const startOffset = currentTime;
-    
-    const updateTime = () => {
+    const updateSimulatedTime = () => {
       const state = get();
-      if (state.isPlaying && state.currentSource === source) {
-        const elapsed = state.audioContext?.currentTime ? state.audioContext.currentTime - startTime : 0;
-        const newTime = Math.min(startOffset + elapsed, state.currentAudioBuffer?.duration || 0);
-        set({ currentTime: newTime });
-        requestAnimationFrame(updateTime);
+      if (!state.isPlaying || !state.isSimulatedPlayback) return;
+      
+      const elapsed = (performance.now() - startTime) / 1000;
+      localTime = currentTime + elapsed * playbackSpeed;
+      
+      if (localTime >= duration) {
+        localTime = duration;
+        get().stop();
+        set({ currentTime: 0 });
+        return;
       }
+      
+      set({ currentTime: localTime });
     };
-    requestAnimationFrame(updateTime);
     
-    source.onended = () => {
-      const state = get();
-      if (state.currentSource === source) {
-        set({ currentSource: null, isPlaying: false, currentTime: 0 });
-      }
-    };
+    simulatedPlaybackInterval = setInterval(updateSimulatedTime, 16);
+    set({ isPlaying: true, isSimulatedPlayback: true });
+  },
+  
+  stopSimulatedPlayback: () => {
+    if (simulatedPlaybackInterval) {
+      clearInterval(simulatedPlaybackInterval);
+      simulatedPlaybackInterval = null;
+    }
   },
   
   pause: () => {
-    const { currentSource } = get();
+    const { currentSource, isSimulatedPlayback, stopSimulatedPlayback } = get();
     if (currentSource) {
       try { currentSource.stop(); } catch (e) {}
       set({ currentSource: null, isPlaying: false });
+    } else if (isSimulatedPlayback) {
+      stopSimulatedPlayback();
+      set({ isPlaying: false, isSimulatedPlayback: false });
     }
   },
   
   stop: () => {
-    const { currentSource } = get();
+    const { currentSource, isSimulatedPlayback, stopSimulatedPlayback } = get();
     if (currentSource) {
       try { currentSource.stop(); } catch (e) {}
-      set({ currentSource: null, isPlaying: false, currentTime: 0 });
+      set({ currentSource: null, isPlaying: false, currentTime: 0, isSimulatedPlayback: false });
+    } else if (isSimulatedPlayback) {
+      stopSimulatedPlayback();
+      set({ isPlaying: false, isSimulatedPlayback: false, currentTime: 0 });
     }
   },
   
@@ -224,6 +282,15 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   
   setDuration: (duration) => {
     set({ duration: Math.max(0, duration) });
+  },
+  
+  setPlaybackSpeed: (speed) => {
+    const { currentSource, playbackSpeed } = get();
+    set({ playbackSpeed: speed });
+    
+    if (currentSource) {
+      currentSource.playbackRate.value = speed;
+    }
   },
   
   importAudioFile: async (file, projectId) => {

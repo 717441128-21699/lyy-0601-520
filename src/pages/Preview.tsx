@@ -65,9 +65,14 @@ export function Preview() {
     setVolume,
     loadSongAudio,
     currentAudioBuffer,
+    setPlaybackSpeed: setStorePlaybackSpeed,
+    playbackSpeed: storePlaybackSpeed,
   } = useAudioStore();
   
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const playbackSpeed = storePlaybackSpeed;
+  const setPlaybackSpeed = (speed: number) => {
+    setStorePlaybackSpeed(speed);
+  };
   const [isMuted, setIsMuted] = useState(false);
   const [showJudgement, setShowJudgement] = useState(true);
   const [showCombo, setShowCombo] = useState(true);
@@ -101,8 +106,11 @@ export function Preview() {
   useEffect(() => {
     if (song) {
       useAudioStore.getState().setDuration(song.duration);
+      if (!currentAudioBuffer && song.duration) {
+        useAudioStore.getState().setCurrentTime(0);
+      }
     }
-  }, [song]);
+  }, [song, currentAudioBuffer]);
 
   const judgeNote = useCallback((note: Note, hitTime: number): JudgeResult => {
     const diff = Math.abs(hitTime - note.time);

@@ -272,14 +272,43 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ isLoading: true });
     const data = await loadFromDatabase();
     if (data.hasData) {
+      let validProjectId = data.currentProjectId;
+      let validSongId = data.currentSongId;
+      let validChartId = data.currentChartId;
+
+      const projectExists = data.projects.some(p => p.id === validProjectId);
+      if (!projectExists && data.projects.length > 0) {
+        validProjectId = data.projects[0].id;
+        const firstSong = data.songs.find(s => s.projectId === validProjectId);
+        const firstChart = data.charts.find(c => c.projectId === validProjectId);
+        validSongId = firstSong?.id || null;
+        validChartId = firstChart?.id || null;
+      }
+
+      const songExists = validSongId && data.songs.some(s => s.id === validSongId);
+      if (!songExists && validProjectId) {
+        const firstSong = data.songs.find(s => s.projectId === validProjectId);
+        validSongId = firstSong?.id || null;
+        if (firstSong) {
+          const firstChart = data.charts.find(c => c.songId === firstSong.id);
+          validChartId = firstChart?.id || validChartId;
+        }
+      }
+
+      const chartExists = validChartId && data.charts.some(c => c.id === validChartId);
+      if (!chartExists && validSongId) {
+        const firstChart = data.charts.find(c => c.songId === validSongId);
+        validChartId = firstChart?.id || null;
+      }
+
       set({
         projects: data.projects,
         songs: data.songs,
         charts: data.charts,
         logs: data.logs,
-        currentProjectId: data.currentProjectId,
-        currentSongId: data.currentSongId,
-        currentChartId: data.currentChartId,
+        currentProjectId: validProjectId,
+        currentSongId: validSongId,
+        currentChartId: validChartId,
         isLoading: false,
       });
     } else {

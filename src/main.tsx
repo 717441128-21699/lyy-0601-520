@@ -40,11 +40,11 @@ function AppInitializer() {
         
         const demoState = useProjectStore.getState();
         if (demoState.projects.length > 0 && !demoState.currentProjectId) {
-          const firstProject = demoState.projects[0];
-          const firstSong = demoState.songs.find(s => s.projectId === firstProject.id);
-          const firstChart = demoState.charts.find(c => c.projectId === firstProject.id);
+          const neonCityProject = demoState.projects.find(p => p.name === '霓虹都市') || demoState.projects[0];
+          const firstSong = demoState.songs.find(s => s.projectId === neonCityProject.id);
+          const firstChart = demoState.charts.find(c => c.projectId === neonCityProject.id);
           
-          useProjectStore.getState().setCurrentProject(firstProject.id);
+          useProjectStore.getState().setCurrentProject(neonCityProject.id);
           if (firstSong) useProjectStore.getState().setCurrentSong(firstSong.id);
           if (firstChart) useProjectStore.getState().setCurrentChart(firstChart.id);
         }
