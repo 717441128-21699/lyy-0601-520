@@ -45,6 +45,7 @@ interface ProjectState {
   loadDemoData: () => void;
   initializeFromDatabase: () => Promise<void>;
   saveToDatabase: () => Promise<void>;
+  forceSave: () => Promise<void>;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -350,6 +351,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
   
   saveToDatabase: async () => {
+    const state = get();
+    await saveToDatabase(
+      state.projects,
+      state.songs,
+      state.charts,
+      state.logs,
+      state.currentProjectId,
+      state.currentSongId,
+      state.currentChartId
+    );
+  },
+  
+  forceSave: async () => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
     const state = get();
     await saveToDatabase(
       state.projects,

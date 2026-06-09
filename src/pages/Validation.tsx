@@ -32,7 +32,7 @@ type SeverityFilter = 'all' | 'error' | 'warning' | 'info';
 type TypeFilter = 'all' | string;
 
 export function Validation() {
-  const { getCurrentChart, updateChart, addEditHistory } = useProjectStore();
+  const { getCurrentChart, updateChart, addEditHistory, forceSave } = useProjectStore();
   const { reports, addReport, updateIssue, markIssueFixed, getLatestReport } = useValidationStore();
   const { setCurrentTime } = useEditorStore();
   
@@ -96,6 +96,8 @@ export function Validation() {
         description: `自动修复问题: ${issue.description}`,
         user: '谱师',
       });
+      
+      await forceSave();
     }
   };
 
@@ -126,9 +128,10 @@ export function Validation() {
     });
     
     setIsFixing(false);
+    await forceSave();
   };
 
-  const handleMarkFixed = (issueId: string) => {
+  const handleMarkFixed = async (issueId: string) => {
     if (chart) {
       markIssueFixed(chart.id, issueId);
       if (currentReport) {
@@ -139,6 +142,7 @@ export function Validation() {
           ),
         });
       }
+      await forceSave();
     }
   };
 

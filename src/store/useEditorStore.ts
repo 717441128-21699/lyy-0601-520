@@ -134,6 +134,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
     
     set({ selectedNoteIds: [newNote.id] });
+    useProjectStore.getState().forceSave();
     return newNote;
   },
   
@@ -146,6 +147,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     ).sort((a, b) => a.time - b.time);
     
     useProjectStore.getState().updateChart(chart.id, { notes: updatedNotes });
+    useProjectStore.getState().forceSave();
   },
   
   deleteNote: (noteId) => {
@@ -159,6 +161,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set(state => ({
       selectedNoteIds: state.selectedNoteIds.filter(id => id !== noteId),
     }));
+    useProjectStore.getState().forceSave();
   },
   
   deleteSelectedNotes: () => {
@@ -171,6 +174,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
     
     set({ selectedNoteIds: [] });
+    useProjectStore.getState().forceSave();
   },
   
   moveSelectedNotes: (timeOffset, trackOffset) => {
@@ -191,6 +195,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }).sort((a, b) => a.time - b.time);
     
     useProjectStore.getState().updateChart(chart.id, { notes: updatedNotes });
+    useProjectStore.getState().forceSave();
   },
   
   snapAllNotes: (chartId) => {
@@ -200,6 +205,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     
     const snappedNotes = snapAllNotesToGrid(chart.notes, beatGrid, snapDivision);
     useProjectStore.getState().updateChart(chartId, { notes: snappedNotes });
+    useProjectStore.getState().forceSave();
   },
   
   snapSelectedNotes: (chartId) => {
@@ -218,6 +224,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }).sort((a, b) => a.time - b.time);
     
     useProjectStore.getState().updateChart(chartId, { notes: updatedNotes });
+    useProjectStore.getState().forceSave();
   },
   
   adjustAllNotesOffset: (chartId, offset) => {
@@ -229,6 +236,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       notes: adjustedNotes,
       offset: chart.offset + offset,
     });
+    useProjectStore.getState().forceSave();
   },
   
   addTimingMarker: (chartId, marker) => {
@@ -243,6 +251,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       useProjectStore.getState().updateChart(chartId, {
         timingMarkers: [...chart.timingMarkers, newMarker].sort((a, b) => a.time - b.time),
       });
+      useProjectStore.getState().forceSave();
     }
     
     return newMarker;
@@ -257,6 +266,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     ).sort((a, b) => a.time - b.time);
     
     useProjectStore.getState().updateChart(chart.id, { timingMarkers: updatedMarkers });
+    useProjectStore.getState().forceSave();
   },
   
   deleteTimingMarker: (markerId) => {
@@ -266,6 +276,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     useProjectStore.getState().updateChart(chart.id, {
       timingMarkers: chart.timingMarkers.filter(m => m.id !== markerId),
     });
+    useProjectStore.getState().forceSave();
   },
   
   clearAll: () => set({

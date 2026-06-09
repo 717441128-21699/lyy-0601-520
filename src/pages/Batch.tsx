@@ -37,7 +37,7 @@ interface BatchTask {
 }
 
 export function Batch() {
-  const { projects, songs, charts, getCurrentProject, getCurrentSong, getCurrentChart, updateChart, addEditHistory } = useProjectStore();
+  const { projects, songs, charts, getCurrentProject, getCurrentSong, getCurrentChart, updateChart, addEditHistory, forceSave } = useProjectStore();
   
   const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -243,6 +243,7 @@ export function Batch() {
     setIsProcessing(false);
     setShowResults(true);
     setCurrentTask('');
+    await forceSave();
   };
 
   const totalNotes = selectedCharts.reduce((sum, id) => {

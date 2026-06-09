@@ -97,7 +97,7 @@ export function Dashboard() {
         />
         <StatCard
           title="预估难度"
-          value={`Lv.${report?.estimatedDifficulty || chart?.difficulty || 0}`}
+          value={`Lv.${report?.estimatedDifficulty || chart?.difficultyLevel || 0}`}
           icon={Target}
           color="yellow"
           delay={0.4}
