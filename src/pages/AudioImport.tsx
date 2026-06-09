@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore } from '../store/useProjectStore';
 import { useAudioStore } from '../store/useAudioStore';
@@ -21,12 +21,26 @@ import { formatTime, formatBPM } from '../utils/formatters';
 import type { Song } from '../types';
 
 export function AudioImport() {
-  const { songs, addSong, removeSong, setCurrentSong } = useProjectStore();
-  const { audioContext, loadAudioFile, isLoading, bpmResult, analyzeBPM, waveformData, currentTime, duration, isPlaying, togglePlay, seekTo } = useAudioStore();
+  const { songs, currentSongId, removeSong, setCurrentSong, getCurrentSong } = useProjectStore();
+  const { loadSongAudio, isLoading, bpmResult, waveformData, currentTime, duration, isPlaying, togglePlay, seekTo, currentAudioBuffer } = useAudioStore();
   
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [songInfo, setSongInfo] = useState<Partial<Song> | null>(null);
+
+  const currentSong = getCurrentSong();
+
+  useEffect(() => {
+    if (currentSongId && !currentAudioBuffer) {
+      loadSongAudio(currentSongId);
+    }
+  }, [currentSongId, currentAudioBuffer, loadSongAudio]);
+
+  useEffect(() => {
+    if (currentSong) {
+      setSongInfo(currentSong);
+    }
+  }, [currentSong]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -80,10 +94,12 @@ export function AudioImport() {
 
   const handleSelectSong = (song: Song) => {
     setCurrentSong(song.id);
+    loadSongAudio(song.id);
   };
 
-  const handleWaveformClick = (time: number) => {
-    seekTo(time);
+  const handleWaveformClick = (ratio: number) => {
+    const actualTime = ratio * (duration || 1);
+    seekTo(actualTime);
   };
 
   return (

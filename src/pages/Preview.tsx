@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useProjectStore } from '../store/useProjectStore';
-import { useEditorStore } from '../store/useEditorStore';
 import { useAudioStore } from '../store/useAudioStore';
 import {
   Play,
@@ -10,7 +9,6 @@ import {
   SkipForward,
   Volume2,
   VolumeX,
-  Settings,
   Zap,
   Music,
   Target,
@@ -55,12 +53,21 @@ const trackColors = [
 ];
 
 export function Preview() {
-  const { getCurrentSong, getCurrentChart } = useProjectStore();
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useEditorStore();
-  const { duration } = useAudioStore();
+  const { getCurrentSong, getCurrentChart, currentSongId } = useProjectStore();
+  const {
+    currentTime,
+    duration,
+    isPlaying,
+    volume,
+    togglePlay,
+    seekTo,
+    stop,
+    setVolume,
+    loadSongAudio,
+    currentAudioBuffer,
+  } = useAudioStore();
   
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [volume, setVolume] = useState(0.8);
   const [isMuted, setIsMuted] = useState(false);
   const [showJudgement, setShowJudgement] = useState(true);
   const [showCombo, setShowCombo] = useState(true);
@@ -74,14 +81,28 @@ export function Preview() {
   const [lastJudge, setLastJudge] = useState<{ result: JudgeResult; time: number } | null>(null);
   
   const playAreaRef = useRef<HTMLDivElement>(null);
-  const playIntervalRef = useRef<number | null>(null);
   const processedNotesRef = useRef<Set<string>>(new Set());
+  const lastJudgeTimeRef = useRef(0);
 
   const song = getCurrentSong();
   const chart = getCurrentChart();
+  const actualDuration = song?.duration || duration || 0;
 
   const pixelPerSecond = 400;
   const judgeLinePosition = 0.85;
+  const lookAheadTime = 2;
+
+  useEffect(() => {
+    if (currentSongId && !currentAudioBuffer) {
+      loadSongAudio(currentSongId);
+    }
+  }, [currentSongId, currentAudioBuffer, loadSongAudio]);
+
+  useEffect(() => {
+    if (song) {
+      useAudioStore.getState().setDuration(song.duration);
+    }
+  }, [song]);
 
   const judgeNote = useCallback((note: Note, hitTime: number): JudgeResult => {
     const diff = Math.abs(hitTime - note.time);
@@ -91,85 +112,77 @@ export function Preview() {
     return 'miss';
   }, []);
 
-  const currentTimeRef = useRef(0);
-  
   useEffect(() => {
-    currentTimeRef.current = currentTime;
-  }, [currentTime]);
+    if (!isPlaying || !chart || !autoPlay) return;
 
-  useEffect(() => {
-    if (isPlaying && autoPlay && chart) {
-      playIntervalRef.current = window.setInterval(() => {
-        const prev = currentTimeRef.current;
-        const newTime = prev + 0.016 * playbackSpeed;
-        currentTimeRef.current = newTime;
+    const checkNotes = () => {
+      const now = currentTime;
+      
+      chart.notes.forEach(note => {
+        if (processedNotesRef.current.has(note.id)) return;
+
+        const diff = now - note.time;
         
-        chart.notes.forEach(note => {
-          if (!processedNotesRef.current.has(note.id) && 
-              Math.abs(newTime - note.time) < 0.03) {
-            const result = 'perfect' as const;
-            processedNotesRef.current.add(note.id);
-            
-            setHitNotes(prev => [...prev, { noteId: note.id, result, time: newTime }]);
-            setJudgeCounts(prev => ({ ...prev, [result]: prev[result] + 1 }));
-            setCombo(prev => {
-              const newCombo = prev + 1;
-              setMaxCombo(max => Math.max(max, newCombo));
-              return newCombo;
-            });
-            setLastJudge({ result, time: newTime });
-          }
+        if (Math.abs(diff) < 0.03) {
+          const result = judgeNote(note, now);
+          processedNotesRef.current.add(note.id);
           
-          if (!processedNotesRef.current.has(note.id) && newTime > note.time + 0.15) {
-            processedNotesRef.current.add(note.id);
-            setHitNotes(prev => [...prev, { noteId: note.id, result: 'miss', time: newTime }]);
-            setJudgeCounts(prev => ({ ...prev, miss: prev.miss + 1 }));
-            setCombo(0);
-            setLastJudge({ result: 'miss', time: newTime });
-          }
-        });
-        
-        if (newTime >= (duration || 0)) {
-          setIsPlaying(false);
-          setCurrentTime(0);
-          currentTimeRef.current = 0;
-        } else {
-          setCurrentTime(newTime);
+          setHitNotes(prev => [...prev, { noteId: note.id, result, time: now }]);
+          setJudgeCounts(prev => ({ ...prev, [result]: prev[result] + 1 }));
+          setCombo(prev => {
+            const newCombo = result === 'miss' ? 0 : prev + 1;
+            setMaxCombo(max => Math.max(max, newCombo));
+            return newCombo;
+          });
+          setLastJudge({ result, time: now });
+          lastJudgeTimeRef.current = now;
+        } else if (diff > 0.15) {
+          processedNotesRef.current.add(note.id);
+          setHitNotes(prev => [...prev, { noteId: note.id, result: 'miss', time: now }]);
+          setJudgeCounts(prev => ({ ...prev, miss: prev.miss + 1 }));
+          setCombo(0);
+          setLastJudge({ result: 'miss', time: now });
+          lastJudgeTimeRef.current = now;
         }
-      }, 16);
-    } else {
-      if (playIntervalRef.current) {
-        clearInterval(playIntervalRef.current);
-      }
-    }
-    
-    return () => {
-      if (playIntervalRef.current) {
-        clearInterval(playIntervalRef.current);
+      });
+
+      if (now >= actualDuration) {
+        stop();
+        useAudioStore.getState().setCurrentTime(actualDuration);
       }
     };
-  }, [isPlaying, autoPlay, chart, duration, playbackSpeed, setCurrentTime, setIsPlaying]);
+
+    const intervalId = setInterval(checkNotes, 16);
+    return () => clearInterval(intervalId);
+  }, [isPlaying, chart, autoPlay, currentTime, actualDuration, judgeNote, stop]);
 
   const handleTogglePlay = () => {
-    if (currentTime >= (duration || 0)) {
+    if (currentTime >= actualDuration) {
       handleRestart();
+      return;
     }
-    setIsPlaying(!isPlaying);
+    togglePlay();
   };
 
   const handleRestart = () => {
-    setCurrentTime(0);
+    stop();
+    seekTo(0);
     setHitNotes([]);
     setCombo(0);
     setMaxCombo(0);
     setJudgeCounts({ perfect: 0, great: 0, good: 0, miss: 0 });
     setLastJudge(null);
     processedNotesRef.current.clear();
-    setIsPlaying(true);
+    setTimeout(() => togglePlay(), 50);
   };
 
   const handleSeek = (time: number) => {
-    setCurrentTime(time);
+    const clampedTime = Math.max(0, Math.min(time, actualDuration));
+    seekTo(clampedTime);
+    processedNotesRef.current.clear();
+    setHitNotes([]);
+    setCombo(0);
+    setJudgeCounts({ perfect: 0, great: 0, good: 0, miss: 0 });
   };
 
   const handleKeyPress = useCallback((e: KeyboardEvent) => {
@@ -179,7 +192,7 @@ export function Preview() {
     } else if (e.key === 'r' || e.key === 'R') {
       handleRestart();
     }
-  }, [isPlaying]);
+  }, [currentTime, actualDuration]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyPress);
@@ -187,8 +200,8 @@ export function Preview() {
   }, [handleKeyPress]);
 
   const visibleNotes = chart?.notes.filter(note => {
-    const noteY = (note.time - currentTime) * pixelPerSecond;
-    return noteY > -200 && noteY < playAreaRef.current?.clientHeight! + 200;
+    const timeUntilJudge = note.time - currentTime;
+    return timeUntilJudge > -0.5 && timeUntilJudge < lookAheadTime;
   }) || [];
 
   const totalNotes = chart?.notes.length || 0;
@@ -199,6 +212,35 @@ export function Preview() {
 
   const score = judgeCounts.perfect * 300 + judgeCounts.great * 200 + judgeCounts.good * 100;
 
+  const getNotePosition = (noteTime: number) => {
+    const timeUntilJudge = noteTime - currentTime;
+    const playAreaHeight = playAreaRef.current?.clientHeight || 600;
+    const judgeLineY = judgeLinePosition * playAreaHeight;
+    const y = judgeLineY - timeUntilJudge * pixelPerSecond;
+    return y;
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    handleSeek(ratio * actualDuration);
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    if (newVolume > 0) setIsMuted(false);
+  };
+
+  const handleToggleMute = () => {
+    if (isMuted) {
+      setVolume(volume || 0.5);
+      setIsMuted(false);
+    } else {
+      setVolume(0);
+      setIsMuted(true);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-bg-dark">
       <div className="p-4 border-b border-border bg-bg-dark/80 backdrop-blur-xl flex items-center justify-between">
@@ -206,8 +248,9 @@ export function Preview() {
           <h1 className="font-display text-2xl font-bold text-white">试玩预览</h1>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => handleSeek(Math.max(0, currentTime - 5))}
-              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white"
+              onClick={() => handleSeek(currentTime - 5)}
+              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+              title="后退5秒"
             >
               <SkipBack className="w-4 h-4" />
             </button>
@@ -222,14 +265,15 @@ export function Preview() {
               )}
             </button>
             <button
-              onClick={() => handleSeek(Math.min(duration || 0, currentTime + 5))}
-              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white"
+              onClick={() => handleSeek(currentTime + 5)}
+              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+              title="前进5秒"
             >
               <SkipForward className="w-4 h-4" />
             </button>
             <button
               onClick={handleRestart}
-              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white"
+              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
               title="重新开始 (R)"
             >
               <RotateCcw className="w-4 h-4" />
@@ -237,7 +281,7 @@ export function Preview() {
           </div>
           <div>
             <p className="text-white font-mono">{formatTime(currentTime)}</p>
-            <p className="text-xs text-gray-500 font-mono">/ {formatTime(duration || 0)}</p>
+            <p className="text-xs text-gray-500 font-mono">/ {formatTime(actualDuration)}</p>
           </div>
         </div>
 
@@ -259,21 +303,18 @@ export function Preview() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsMuted(!isMuted)}
-              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white"
+              onClick={handleToggleMute}
+              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
             >
-              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <input
               type="range"
               min="0"
               max="1"
-              step="0.1"
+              step="0.05"
               value={isMuted ? 0 : volume}
-              onChange={(e) => {
-                setVolume(parseFloat(e.target.value));
-                setIsMuted(false);
-              }}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
               className="w-24 accent-neon-cyan"
             />
           </div>
@@ -293,13 +334,15 @@ export function Preview() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowJudgement(!showJudgement)}
-              className={`p-2 rounded-lg ${showJudgement ? 'bg-neon-cyan/10 text-neon-cyan' : 'bg-bg-dark/50 text-gray-400'}`}
+              className={`p-2 rounded-lg ${showJudgement ? 'bg-neon-cyan/10 text-neon-cyan' : 'bg-bg-dark/50 text-gray-400'} transition-colors`}
+              title="显示判定"
             >
               {showJudgement ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
             </button>
             <button
               onClick={() => setShowCombo(!showCombo)}
-              className={`p-2 rounded-lg ${showCombo ? 'bg-neon-pink/10 text-neon-pink' : 'bg-bg-dark/50 text-gray-400'}`}
+              className={`p-2 rounded-lg ${showCombo ? 'bg-neon-pink/10 text-neon-pink' : 'bg-bg-dark/50 text-gray-400'} transition-colors`}
+              title="显示连击"
             >
               <Zap className="w-4 h-4" />
             </button>
@@ -308,7 +351,7 @@ export function Preview() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-48 p-4 border-r border-border bg-bg-dark/60 space-y-4">
+        <div className="w-48 p-4 border-r border-border bg-bg-dark/60 space-y-4 overflow-y-auto">
           <div className="text-center p-4 rounded-lg bg-bg-dark/50 border border-border">
             <p className="text-xs text-gray-500 font-mono mb-1">歌曲</p>
             <p className="text-white font-mono text-sm truncate">{song?.title || '--'}</p>
@@ -365,41 +408,45 @@ export function Preview() {
             }} />
           </div>
 
-          {showCombo && combo > 0 && (
-            <motion.div
-              key={combo}
-              initial={{ scale: 1.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              className="absolute top-1/4 left-1/2 -translate-x-1/2 text-center z-20 pointer-events-none"
-            >
-              <p className="font-display text-6xl font-bold text-neon-yellow" style={{ textShadow: '0 0 30px rgba(255, 204, 0, 0.8)' }}>
-                {combo}
-              </p>
-              <p className="text-sm font-mono text-neon-yellow tracking-widest">COMBO</p>
-            </motion.div>
-          )}
-
-          {showJudgement && lastJudge && Date.now() - lastJudge.time * 1000 < 500 && (
-            <motion.div
-              key={`${lastJudge.result}-${lastJudge.time}`}
-              initial={{ y: 0, opacity: 1, scale: 1.2 }}
-              animate={{ y: -50, opacity: 0, scale: 0.8 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5 }}
-              className="absolute top-1/3 left-1/2 -translate-x-1/2 z-20 pointer-events-none"
-            >
-              <p 
-                className="font-display text-4xl font-bold tracking-widest"
-                style={{ 
-                  color: judgeColors[lastJudge.result],
-                  textShadow: `0 0 20px ${judgeColors[lastJudge.result]}`,
-                }}
+          <AnimatePresence>
+            {showCombo && combo > 0 && (
+              <motion.div
+                key={combo}
+                initial={{ scale: 1.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                className="absolute top-1/4 left-1/2 -translate-x-1/2 text-center z-20 pointer-events-none"
               >
-                {judgeLabels[lastJudge.result]}
-              </p>
-            </motion.div>
-          )}
+                <p className="font-display text-6xl font-bold text-neon-yellow" style={{ textShadow: '0 0 30px rgba(255, 204, 0, 0.8)' }}>
+                  {combo}
+                </p>
+                <p className="text-sm font-mono text-neon-yellow tracking-widest">COMBO</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {showJudgement && lastJudge && currentTime - lastJudge.time < 0.5 && (
+              <motion.div
+                key={`${lastJudge.result}-${lastJudge.time}`}
+                initial={{ y: 0, opacity: 1, scale: 1.2 }}
+                animate={{ y: -50, opacity: 0, scale: 0.8 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5 }}
+                className="absolute top-1/3 left-1/2 -translate-x-1/2 z-20 pointer-events-none"
+              >
+                <p 
+                  className="font-display text-4xl font-bold tracking-widest"
+                  style={{ 
+                    color: judgeColors[lastJudge.result],
+                    textShadow: `0 0 20px ${judgeColors[lastJudge.result]}`,
+                  }}
+                >
+                  {judgeLabels[lastJudge.result]}
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div 
             className="absolute w-full z-10"
@@ -420,11 +467,7 @@ export function Preview() {
                 {visibleNotes
                   .filter(note => note.trackIndex === trackIndex)
                   .map((note) => {
-                    const noteY = (note.time - currentTime) * pixelPerSecond;
-                    const topPercent = judgeLinePosition * 100 + noteY / playAreaRef.current!.clientHeight * 100;
-                    
-                    if (topPercent < -20 || topPercent > 120) return null;
-
+                    const noteY = getNotePosition(note.time);
                     const isHit = hitNotes.some(h => h.noteId === note.id);
                     const hitResult = hitNotes.find(h => h.noteId === note.id)?.result;
 
@@ -440,14 +483,23 @@ export function Preview() {
                           note.type === 'tap' ? 'note-tap' :
                           note.type === 'hold' ? 'note-hold' :
                           note.type === 'slide' ? 'note-slide' : 'note-swing'
-                        } ${isHit ? 'opacity-30' : ''}`}
+                        }`}
                         style={{ 
-                          top: `${topPercent}%`,
+                          top: `${noteY}px`,
                           transform: 'translateY(-50%)',
                           boxShadow: isHit && hitResult ? `0 0 20px ${judgeColors[hitResult]}` : undefined,
                         }}
                       >
                         {note.type === 'tap' ? 'T' : note.type === 'hold' ? 'H' : note.type === 'slide' ? 'S' : 'W'}
+                        {note.duration && note.duration > 0 && (
+                          <div 
+                            className="absolute left-0 right-0 bg-inherit opacity-50 rounded-t-lg"
+                            style={{ 
+                              bottom: '100%', 
+                              height: `${note.duration * pixelPerSecond}px`,
+                            }}
+                          />
+                        )}
                       </motion.div>
                     );
                   })}
@@ -460,10 +512,13 @@ export function Preview() {
         </div>
       </div>
 
-      <div className="h-2 bg-bg-dark border-t border-border">
+      <div 
+        className="h-2 bg-bg-dark border-t border-border cursor-pointer"
+        onClick={handleProgressClick}
+      >
         <div 
           className="h-full bg-gradient-to-r from-neon-cyan to-neon-pink transition-all duration-75"
-          style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+          style={{ width: `${(currentTime / (actualDuration || 1)) * 100}%` }}
         />
       </div>
 
@@ -474,7 +529,7 @@ export function Preview() {
         </div>
         <div className="flex items-center gap-4">
           <span>速度: {playbackSpeed}x</span>
-          <span>音量: {isMuted ? '静音' : `${Math.round(volume * 100)}%`}</span>
+          <span>音量: {isMuted ? '静音' : `${Math.round((isMuted ? 0 : volume) * 100)}%`}</span>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { Chart, Song, Note, ExportOptions, ExportFormat, VersionDiff } from '../../types';
 import { sanitizeFilename, formatTime } from '../formatters';
+import JSZip from 'jszip';
 
 export function exportToJSON(chart: Chart, song?: Song): string {
   const data = {
@@ -384,13 +385,23 @@ export async function batchExportCharts(
   charts: Array<{ chart: Chart; song?: Song }>,
   options: ExportOptions,
   onProgress?: (current: number, total: number) => void
-): Promise<Blob[]> {
-  const blobs: Blob[] = [];
+): Promise<{ blob: Blob; filename: string }[]> {
+  const results: { blob: Blob; filename: string }[] = [];
   
   for (let i = 0; i < charts.length; i++) {
     const { chart, song } = charts[i];
     const blob = await exportChart(chart, song, options);
-    blobs.push(blob);
+    const baseName = sanitizeFilename(`${song?.title || 'chart'}_${chart.difficulty}`);
+    const extMap: Record<ExportFormat, string> = {
+      json: 'json',
+      osu: 'osu',
+      bms: 'bms',
+      chart: 'chart',
+      zip: 'zip',
+    };
+    const filename = `${baseName}.${extMap[options.format]}`;
+    
+    results.push({ blob, filename });
     
     if (onProgress) {
       onProgress(i + 1, charts.length);
@@ -399,5 +410,71 @@ export async function batchExportCharts(
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   
-  return blobs;
+  return results;
+}
+
+export async function createLevelPack(
+  charts: Array<{ chart: Chart; song?: Song }>,
+  options: ExportOptions,
+  packName: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<Blob> {
+  const zip = new JSZip();
+  const folder = zip.folder(sanitizeFilename(packName))!;
+  
+  const files = await batchExportCharts(charts, options, onProgress);
+  
+  files.forEach(({ blob, filename }) => {
+    folder.file(filename, blob);
+  });
+  
+  const manifest = {
+    name: packName,
+    format: options.format,
+    chartCount: charts.length,
+    createdAt: new Date().toISOString(),
+    charts: charts.map(({ chart, song }) => ({
+      id: chart.id,
+      name: chart.name,
+      song: song?.title,
+      difficulty: chart.difficulty,
+      difficultyLevel: chart.difficultyLevel,
+      bpm: chart.bpm,
+      noteCount: chart.notes.length,
+    })),
+  };
+  
+  folder.file('manifest.json', JSON.stringify(manifest, null, 2));
+  
+  return zip.generateAsync({ type: 'blob' });
+}
+
+export async function downloadBatchExport(
+  charts: Array<{ chart: Chart; song?: Song }>,
+  options: ExportOptions,
+  onProgress?: (current: number, total: number) => void
+): Promise<void> {
+  if (charts.length === 0) {
+    throw new Error('没有选择要导出的谱面');
+  }
+  
+  if (charts.length === 1) {
+    const { chart, song } = charts[0];
+    const blob = await exportChart(chart, song, options);
+    const baseName = sanitizeFilename(`${song?.title || 'chart'}_${chart.difficulty}`);
+    const extMap: Record<ExportFormat, string> = {
+      json: 'json',
+      osu: 'osu',
+      bms: 'bms',
+      chart: 'chart',
+      zip: 'zip',
+    };
+    const filename = `${baseName}.${extMap[options.format]}`;
+    downloadBlob(blob, filename);
+  } else {
+    const projectName = charts[0]?.song?.title || 'LevelPack';
+    const packName = `${projectName}_${charts.length}charts`;
+    const zipBlob = await createLevelPack(charts, options, packName, onProgress);
+    downloadBlob(zipBlob, `${sanitizeFilename(packName)}.zip`);
+  }
 }

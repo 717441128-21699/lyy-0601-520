@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Project, Song, Chart, ModificationLog } from '../types';
 import { demoProjects, demoSongs, demoCharts, demoModificationLogs } from '../mock/demoData';
+import { saveToDatabase, loadFromDatabase } from '../utils/db/indexedDB';
 
 interface ProjectState {
   projects: Project[];
@@ -42,9 +43,30 @@ interface ProjectState {
   addEditHistory: (log: Omit<ModificationLog, 'id' | 'timestamp'>) => void;
   
   loadDemoData: () => void;
+  initializeFromDatabase: () => Promise<void>;
+  saveToDatabase: () => Promise<void>;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
+
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+const debouncedSave = (getState: () => ProjectState) => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  saveTimeout = setTimeout(async () => {
+    const state = getState();
+    await saveToDatabase(
+      state.projects,
+      state.songs,
+      state.charts,
+      state.logs,
+      state.currentProjectId,
+      state.currentSongId,
+      state.currentChartId
+    );
+  }, 500);
+};
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
@@ -54,11 +76,60 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProjectId: null,
   currentSongId: null,
   currentChartId: null,
-  isLoading: false,
+  isLoading: true,
   
-  setCurrentProject: (id) => set({ currentProjectId: id }),
-  setCurrentSong: (id) => set({ currentSongId: id }),
-  setCurrentChart: (id) => set({ currentChartId: id }),
+  setCurrentProject: (id) => {
+    const state = get();
+    if (id) {
+      const projectSongs = state.songs.filter(s => s.projectId === id);
+      const projectCharts = state.charts.filter(c => c.projectId === id);
+      set({
+        currentProjectId: id,
+        currentSongId: projectSongs[0]?.id || null,
+        currentChartId: projectCharts[0]?.id || null,
+      });
+    } else {
+      set({
+        currentProjectId: null,
+        currentSongId: null,
+        currentChartId: null,
+      });
+    }
+    debouncedSave(get);
+  },
+  setCurrentSong: (id) => {
+    const state = get();
+    if (id) {
+      const song = state.songs.find(s => s.id === id);
+      const songCharts = state.charts.filter(c => c.songId === id);
+      set({
+        currentSongId: id,
+        currentChartId: songCharts[0]?.id || null,
+      });
+      if (song) {
+        set({ currentProjectId: song.projectId });
+      }
+    } else {
+      set({ currentSongId: null, currentChartId: null });
+    }
+    debouncedSave(get);
+  },
+  setCurrentChart: (id) => {
+    const state = get();
+    if (id) {
+      const chart = state.charts.find(c => c.id === id);
+      if (chart) {
+        set({
+          currentChartId: id,
+          currentSongId: chart.songId,
+          currentProjectId: chart.projectId,
+        });
+      }
+    } else {
+      set({ currentChartId: null });
+    }
+    debouncedSave(get);
+  },
   
   getCurrentProject: () => get().projects.find(p => p.id === get().currentProjectId),
   getCurrentSong: () => get().songs.find(s => s.id === get().currentSongId),
@@ -81,20 +152,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       chartIds: [],
     };
     set(state => ({ projects: [...state.projects, newProject] }));
+    debouncedSave(get);
     return newProject;
   },
   
-  updateProject: (id, updates) => set(state => ({
-    projects: state.projects.map(p => 
-      p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
-    ),
-  })),
+  updateProject: (id, updates) => {
+    set(state => ({
+      projects: state.projects.map(p => 
+        p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
+      ),
+    }));
+    debouncedSave(get);
+  },
   
-  deleteProject: (id) => set(state => ({
-    projects: state.projects.filter(p => p.id !== id),
-    songs: state.songs.filter(s => s.projectId !== id),
-    charts: state.charts.filter(c => c.projectId !== id),
-  })),
+  deleteProject: (id) => {
+    set(state => ({
+      projects: state.projects.filter(p => p.id !== id),
+      songs: state.songs.filter(s => s.projectId !== id),
+      charts: state.charts.filter(c => c.projectId !== id),
+    }));
+    debouncedSave(get);
+  },
   
   addSong: (song) => {
     const newSong: Song = { ...song, id: generateId() };
@@ -106,25 +184,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : p
       ),
     }));
+    debouncedSave(get);
     return newSong;
   },
   
-  updateSong: (id, updates) => set(state => ({
-    songs: state.songs.map(s => s.id === id ? { ...s, ...updates } : s),
-  })),
+  updateSong: (id, updates) => {
+    set(state => ({
+      songs: state.songs.map(s => s.id === id ? { ...s, ...updates } : s),
+    }));
+    debouncedSave(get);
+  },
   
-  deleteSong: (id) => set(state => {
-    const song = state.songs.find(s => s.id === id);
-    return {
-      songs: state.songs.filter(s => s.id !== id),
-      charts: state.charts.filter(c => c.songId !== id),
-      projects: song ? state.projects.map(p => 
-        p.id === song.projectId
-          ? { ...p, songIds: p.songIds.filter(sid => sid !== id), updatedAt: new Date() }
-          : p
-      ) : state.projects,
-    };
-  }),
+  deleteSong: (id) => {
+    set(state => {
+      const song = state.songs.find(s => s.id === id);
+      return {
+        songs: state.songs.filter(s => s.id !== id),
+        charts: state.charts.filter(c => c.songId !== id),
+        projects: song ? state.projects.map(p => 
+          p.id === song.projectId
+            ? { ...p, songIds: p.songIds.filter(sid => sid !== id), updatedAt: new Date() }
+            : p
+        ) : state.projects,
+      };
+    });
+    debouncedSave(get);
+  },
   
   addChart: (chart) => {
     const newChart: Chart = {
@@ -141,26 +226,33 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : p
       ),
     }));
+    debouncedSave(get);
     return newChart;
   },
   
-  updateChart: (id, updates) => set(state => ({
-    charts: state.charts.map(c => 
-      c.id === id ? { ...c, ...updates, updatedAt: new Date() } : c
-    ),
-  })),
+  updateChart: (id, updates) => {
+    set(state => ({
+      charts: state.charts.map(c => 
+        c.id === id ? { ...c, ...updates, updatedAt: new Date() } : c
+      ),
+    }));
+    debouncedSave(get);
+  },
   
-  deleteChart: (id) => set(state => {
-    const chart = state.charts.find(c => c.id === id);
-    return {
-      charts: state.charts.filter(c => c.id !== id),
-      projects: chart ? state.projects.map(p =>
-        p.id === chart.projectId
-          ? { ...p, chartIds: p.chartIds.filter(cid => cid !== id), updatedAt: new Date() }
-          : p
-      ) : state.projects,
-    };
-  }),
+  deleteChart: (id) => {
+    set(state => {
+      const chart = state.charts.find(c => c.id === id);
+      return {
+        charts: state.charts.filter(c => c.id !== id),
+        projects: chart ? state.projects.map(p =>
+          p.id === chart.projectId
+            ? { ...p, chartIds: p.chartIds.filter(cid => cid !== id), updatedAt: new Date() }
+            : p
+        ) : state.projects,
+      };
+    });
+    debouncedSave(get);
+  },
   
   addLog: (log) => {
     const newLog: ModificationLog = {
@@ -169,10 +261,43 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       timestamp: new Date(),
     };
     set(state => ({ logs: [...state.logs, newLog] }));
+    debouncedSave(get);
   },
   
   addEditHistory: (log) => {
     get().addLog(log);
+  },
+  
+  initializeFromDatabase: async () => {
+    set({ isLoading: true });
+    const data = await loadFromDatabase();
+    if (data.hasData) {
+      set({
+        projects: data.projects,
+        songs: data.songs,
+        charts: data.charts,
+        logs: data.logs,
+        currentProjectId: data.currentProjectId,
+        currentSongId: data.currentSongId,
+        currentChartId: data.currentChartId,
+        isLoading: false,
+      });
+    } else {
+      set({ isLoading: false });
+    }
+  },
+  
+  saveToDatabase: async () => {
+    const state = get();
+    await saveToDatabase(
+      state.projects,
+      state.songs,
+      state.charts,
+      state.logs,
+      state.currentProjectId,
+      state.currentSongId,
+      state.currentChartId
+    );
   },
   
   loadDemoData: () => {
@@ -185,5 +310,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       currentSongId: demoSongs[0]?.id || null,
       currentChartId: demoCharts[0]?.id || null,
     });
+    debouncedSave(get);
   },
 }));

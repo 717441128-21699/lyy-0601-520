@@ -23,7 +23,8 @@ import {
   FileArchive,
 } from 'lucide-react';
 import { formatTime, sanitizeFileName } from '../utils/formatters';
-import { batchExportCharts, exportToJSON } from '../utils/export/exportChart';
+import { downloadBatchExport } from '../utils/export/exportChart';
+import type { ExportFormat } from '../types';
 import type { Chart, Song } from '../types';
 
 interface BatchTask {
@@ -124,14 +125,16 @@ export function Batch() {
     setResults({ success: 0, failed: 0, messages: [] });
     
     const enabledTasks = tasks.filter(t => t.enabled);
-    const totalSteps = selectedCharts.length * enabledTasks.length;
+    const exportTask = enabledTasks.find(t => t.id === 'export');
+    const otherTasks = enabledTasks.filter(t => t.id !== 'export');
+    const totalSteps = selectedCharts.length * otherTasks.length + (exportTask ? 1 : 0);
     let currentStep = 0;
 
     for (const chartId of selectedCharts) {
       const chartData = charts.find(c => c.id === chartId);
       if (!chartData) continue;
 
-      for (const task of enabledTasks) {
+      for (const task of otherTasks) {
         setCurrentTask(`${task.name}: ${chartData.name}`);
         currentStep++;
         setProcessProgress((currentStep / totalSteps) * 100);
@@ -175,22 +178,6 @@ export function Batch() {
               success: prev.success + 1,
               messages: [...prev.messages, `✓ ${chartData.name}: 重命名为 ${newName}`],
             }));
-          } else if (task.id === 'export') {
-            const songData = songs.find(s => s.id === chartData.songId);
-            const json = exportToJSON(chartData, songData);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${sanitizeFileName(chartData.name)}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            setResults(prev => ({
-              ...prev,
-              success: prev.success + 1,
-              messages: [...prev.messages, `✓ ${chartData.name}: 导出完成`],
-            }));
           }
 
           addEditHistory({
@@ -208,6 +195,48 @@ export function Batch() {
             messages: [...prev.messages, `✗ ${chartData.name}: 操作失败`],
           }));
         }
+      }
+    }
+
+    if (exportTask) {
+      setCurrentTask('导出谱面...');
+      currentStep++;
+      setProcessProgress((currentStep / totalSteps) * 100);
+
+      try {
+        const format = exportTask.config.format as ExportFormat;
+        const exportData = selectedCharts.map(chartId => {
+          const chartData = charts.find(c => c.id === chartId);
+          const songData = songs.find(s => s.id === chartData?.songId);
+          return { chart: chartData!, song: songData };
+        }).filter(d => d.chart);
+
+        await downloadBatchExport(exportData, { format, includeAudio: false, includeEffects: false, compress: true }, (current, total) => {
+          setProcessProgress(((currentStep - 1) + current / total) / totalSteps * 100);
+        });
+
+        setResults(prev => ({
+          ...prev,
+          success: prev.success + selectedCharts.length,
+          messages: [...prev.messages, `✓ 成功导出 ${selectedCharts.length} 个谱面 (${format.toUpperCase()}格式)`],
+        }));
+
+        exportData.forEach(({ chart }) => {
+          addEditHistory({
+            projectId: chart.projectId,
+            chartId: chart.id,
+            action: 'batch_export',
+            type: 'export',
+            description: `批量导出: ${format.toUpperCase()}格式`,
+            user: '谱师',
+          });
+        });
+      } catch (error) {
+        setResults(prev => ({
+          ...prev,
+          failed: prev.failed + selectedCharts.length,
+          messages: [...prev.messages, `✗ 导出失败: ${(error as Error).message}`],
+        }));
       }
     }
 

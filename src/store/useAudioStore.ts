@@ -37,6 +37,7 @@ interface AudioState {
   
   importAudioFile: (file: File, projectId: string) => Promise<Song>;
   batchImportAudioFiles: (files: File[], projectId: string, onProgress?: (current: number, total: number) => void) => Promise<Song[]>;
+  loadSongAudio: (songId: string) => Promise<void>;
   
   clear: () => void;
 }
@@ -137,7 +138,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
   
   play: () => {
-    const { audioContext, currentAudioBuffer, gainNode, volume } = get();
+    const { audioContext, currentAudioBuffer, gainNode, volume, currentTime } = get();
     if (!audioContext || !currentAudioBuffer) return;
     
     get().stop();
@@ -150,11 +151,28 @@ export const useAudioStore = create<AudioState>((set, get) => ({
       gainNode.gain.value = volume;
     }
     
-    source.start(0);
+    source.start(0, currentTime);
     set({ currentSource: source, isPlaying: true });
     
+    const startTime = audioContext.currentTime;
+    const startOffset = currentTime;
+    
+    const updateTime = () => {
+      const state = get();
+      if (state.isPlaying && state.currentSource === source) {
+        const elapsed = state.audioContext?.currentTime ? state.audioContext.currentTime - startTime : 0;
+        const newTime = Math.min(startOffset + elapsed, state.currentAudioBuffer?.duration || 0);
+        set({ currentTime: newTime });
+        requestAnimationFrame(updateTime);
+      }
+    };
+    requestAnimationFrame(updateTime);
+    
     source.onended = () => {
-      set({ currentSource: null, isPlaying: false });
+      const state = get();
+      if (state.currentSource === source) {
+        set({ currentSource: null, isPlaying: false, currentTime: 0 });
+      }
     };
   },
   
@@ -241,11 +259,64 @@ export const useAudioStore = create<AudioState>((set, get) => ({
         offset: 0,
       });
       
-      set({ isLoading: false });
+      set({
+        currentAudioBuffer: audioBuffer,
+        waveformData,
+        bpmResult,
+        duration: metadata.duration,
+        currentTime: 0,
+        isLoading: false,
+      });
+      
       return song;
     } catch (e) {
       set({ isLoading: false });
       throw e;
+    }
+  },
+  
+  loadSongAudio: async (songId: string) => {
+    const { initAudioContext, audioContext, analyzeBPM } = get();
+    const song = useProjectStore.getState().songs.find(s => s.id === songId);
+    
+    if (!song || !song.audioFile) return;
+    
+    initAudioContext();
+    set({ isLoading: true });
+    
+    try {
+      const arrayBuffer = await song.audioFile.arrayBuffer();
+      const ctx = audioContext || get().audioContext;
+      if (!ctx) throw new Error('AudioContext not initialized');
+      
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      
+      let bpmResult = get().bpmResult;
+      if (!bpmResult && song.bpm) {
+        bpmResult = {
+          bpm: song.bpm,
+          confidence: song.bpmConfidence || 0.8,
+          beats: [],
+          intervals: [],
+          offset: song.offset || 0,
+        };
+      } else if (!bpmResult) {
+        bpmResult = await analyzeBPM(audioBuffer);
+      }
+      
+      const waveformData = song.waveformData?.length ? song.waveformData : generateWaveform(audioBuffer);
+      
+      set({
+        currentAudioBuffer: audioBuffer,
+        waveformData,
+        bpmResult,
+        duration: song.duration,
+        currentTime: 0,
+        isLoading: false,
+      });
+    } catch (e) {
+      console.error('Failed to load song audio:', e);
+      set({ isLoading: false });
     }
   },
   

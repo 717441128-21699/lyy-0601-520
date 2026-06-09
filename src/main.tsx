@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
@@ -7,29 +7,67 @@ import { useValidationStore } from './store/useValidationStore';
 import { loadDemoData } from './mock/demoData';
 
 function AppInitializer() {
-  const { projects, setCurrentProject, setCurrentSong, setCurrentChart } = useProjectStore();
+  const { 
+    projects, 
+    songs, 
+    charts, 
+    isLoading,
+    setCurrentProject, 
+    setCurrentSong, 
+    setCurrentChart,
+    initializeFromDatabase,
+    loadDemoData: loadDemoDataToStore,
+    addEditHistory,
+    addProject,
+    addSong,
+    addChart,
+  } = useProjectStore();
   const { addReport } = useValidationStore();
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    if (projects.length === 0) {
-      const demo = loadDemoData();
-      demo.projects.forEach(p => useProjectStore.getState().addProject(p));
-      demo.songs.forEach(s => useProjectStore.getState().addSong(s));
-      demo.charts.forEach(c => useProjectStore.getState().addChart(c));
-      demo.editHistory.forEach(h => useProjectStore.getState().addEditHistory(h));
-      demo.validationReports.forEach(r => addReport(r));
+    async function init() {
+      await initializeFromDatabase();
       
-      if (demo.projects.length > 0) {
-        setCurrentProject(demo.projects[0].id);
+      const state = useProjectStore.getState();
+      if (state.projects.length === 0) {
+        const demo = loadDemoData();
+        demo.projects.forEach(p => addProject(p));
+        demo.songs.forEach(s => addSong(s));
+        demo.charts.forEach(c => addChart(c));
+        demo.editHistory.forEach(h => addEditHistory(h));
+        demo.validationReports.forEach(r => addReport(r));
+        
+        const demoState = useProjectStore.getState();
+        if (demoState.projects.length > 0 && !demoState.currentProjectId) {
+          const firstProject = demoState.projects[0];
+          const firstSong = demoState.songs.find(s => s.projectId === firstProject.id);
+          const firstChart = demoState.charts.find(c => c.projectId === firstProject.id);
+          
+          useProjectStore.getState().setCurrentProject(firstProject.id);
+          if (firstSong) useProjectStore.getState().setCurrentSong(firstSong.id);
+          if (firstChart) useProjectStore.getState().setCurrentChart(firstChart.id);
+        }
       }
-      if (demo.songs.length > 0) {
-        setCurrentSong(demo.songs[0].id);
-      }
-      if (demo.charts.length > 0) {
-        setCurrentChart(demo.charts[0].id);
-      }
+      
+      setInitialized(true);
     }
-  }, []);
+    
+    if (!initialized) {
+      init();
+    }
+  }, [initialized, initializeFromDatabase, addProject, addSong, addChart, addEditHistory, addReport]);
+
+  if (isLoading || !initialized) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-cyan-400 font-mono">加载数据中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return null;
 }
