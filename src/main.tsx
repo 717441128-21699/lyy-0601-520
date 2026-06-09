@@ -42,11 +42,19 @@ function AppInitializer() {
         if (demoState.projects.length > 0 && !demoState.currentProjectId) {
           const neonCityProject = demoState.projects.find(p => p.name === '霓虹都市') || demoState.projects[0];
           const firstSong = demoState.songs.find(s => s.projectId === neonCityProject.id);
-          const firstChart = demoState.charts.find(c => c.projectId === neonCityProject.id);
+          
+          const projectCharts = firstSong 
+            ? demoState.charts.filter(c => c.songId === firstSong.id)
+            : demoState.charts.filter(c => c.projectId === neonCityProject.id);
+          
+          const easyChart = projectCharts.find(c => c.difficulty === 'easy')
+            || projectCharts.find(c => c.name.toLowerCase() === 'easy')
+            || projectCharts[0]
+            || null;
           
           useProjectStore.getState().setCurrentProject(neonCityProject.id);
           if (firstSong) useProjectStore.getState().setCurrentSong(firstSong.id);
-          if (firstChart) useProjectStore.getState().setCurrentChart(firstChart.id);
+          if (easyChart) useProjectStore.getState().setCurrentChart(easyChart.id);
         }
       }
       

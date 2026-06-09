@@ -186,11 +186,24 @@ export function Preview() {
 
   const handleSeek = (time: number) => {
     const clampedTime = Math.max(0, Math.min(time, actualDuration));
+    const wasPlaying = isPlaying;
+    
     seekTo(clampedTime);
     processedNotesRef.current.clear();
+    lastJudgeTimeRef.current = 0;
     setHitNotes([]);
     setCombo(0);
+    setMaxCombo(0);
     setJudgeCounts({ perfect: 0, great: 0, good: 0, miss: 0 });
+    setLastJudge(null);
+    
+    if (wasPlaying) {
+      setTimeout(() => {
+        if (!useAudioStore.getState().isPlaying) {
+          useAudioStore.getState().play();
+        }
+      }, 30);
+    }
   };
 
   const handleKeyPress = useCallback((e: KeyboardEvent) => {

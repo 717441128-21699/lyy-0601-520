@@ -256,7 +256,22 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
   
   seekTo: (time) => {
-    set({ currentTime: Math.max(0, Math.min(time, get().duration)) });
+    const state = get();
+    const clampedTime = Math.max(0, Math.min(time, state.duration));
+    
+    if (state.isPlaying) {
+      if (state.isSimulatedPlayback) {
+        state.stopSimulatedPlayback();
+        set({ currentTime: clampedTime, isPlaying: false, isSimulatedPlayback: false });
+        state.play();
+      } else if (state.currentSource) {
+        try { state.currentSource.stop(); } catch (e) {}
+        set({ currentTime: clampedTime, currentSource: null, isPlaying: false });
+        state.play();
+      }
+    } else {
+      set({ currentTime: clampedTime });
+    }
   },
   
   togglePlay: () => {

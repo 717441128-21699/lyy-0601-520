@@ -83,10 +83,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (id) {
       const projectSongs = state.songs.filter(s => s.projectId === id);
       const projectCharts = state.charts.filter(c => c.projectId === id);
+      
+      const firstSong = projectSongs[0] || null;
+      let selectedChart = null;
+      
+      if (firstSong) {
+        const songCharts = projectCharts.filter(c => c.songId === firstSong.id);
+        selectedChart = songCharts.find(c => c.difficulty === 'easy') 
+          || songCharts.find(c => c.name.toLowerCase() === 'easy')
+          || songCharts[0] 
+          || null;
+      }
+      
       set({
         currentProjectId: id,
-        currentSongId: projectSongs[0]?.id || null,
-        currentChartId: projectCharts[0]?.id || null,
+        currentSongId: firstSong?.id || null,
+        currentChartId: selectedChart?.id || null,
       });
     } else {
       set({
@@ -102,9 +114,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (id) {
       const song = state.songs.find(s => s.id === id);
       const songCharts = state.charts.filter(c => c.songId === id);
+      
+      const selectedChart = songCharts.find(c => c.difficulty === 'easy')
+        || songCharts.find(c => c.name.toLowerCase() === 'easy')
+        || songCharts[0]
+        || null;
+      
       set({
         currentSongId: id,
-        currentChartId: songCharts[0]?.id || null,
+        currentChartId: selectedChart?.id || null,
       });
       if (song) {
         set({ currentProjectId: song.projectId });
@@ -280,9 +298,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!projectExists && data.projects.length > 0) {
         validProjectId = data.projects[0].id;
         const firstSong = data.songs.find(s => s.projectId === validProjectId);
-        const firstChart = data.charts.find(c => c.projectId === validProjectId);
         validSongId = firstSong?.id || null;
-        validChartId = firstChart?.id || null;
+        
+        if (firstSong) {
+          const songCharts = data.charts.filter(c => c.songId === firstSong.id);
+          const easyChart = songCharts.find(c => c.difficulty === 'easy')
+            || songCharts.find(c => c.name.toLowerCase() === 'easy')
+            || songCharts[0]
+            || null;
+          validChartId = easyChart?.id || null;
+        }
       }
 
       const songExists = validSongId && data.songs.some(s => s.id === validSongId);
@@ -290,15 +315,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const firstSong = data.songs.find(s => s.projectId === validProjectId);
         validSongId = firstSong?.id || null;
         if (firstSong) {
-          const firstChart = data.charts.find(c => c.songId === firstSong.id);
-          validChartId = firstChart?.id || validChartId;
+          const songCharts = data.charts.filter(c => c.songId === firstSong.id);
+          const easyChart = songCharts.find(c => c.difficulty === 'easy')
+            || songCharts.find(c => c.name.toLowerCase() === 'easy')
+            || songCharts[0]
+            || null;
+          validChartId = easyChart?.id || validChartId;
         }
       }
 
       const chartExists = validChartId && data.charts.some(c => c.id === validChartId);
       if (!chartExists && validSongId) {
-        const firstChart = data.charts.find(c => c.songId === validSongId);
-        validChartId = firstChart?.id || null;
+        const songCharts = data.charts.filter(c => c.songId === validSongId);
+        const easyChart = songCharts.find(c => c.difficulty === 'easy')
+          || songCharts.find(c => c.name.toLowerCase() === 'easy')
+          || songCharts[0]
+          || null;
+        validChartId = easyChart?.id || null;
       }
 
       set({
