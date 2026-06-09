@@ -1,0 +1,207 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.5;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: linear-gradient(135deg, #0a0a1f 0%, #050510 100%);
+  color: #e0e0ff;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-bg-card backdrop-blur-xl border border-border rounded-xl shadow-card;
+  }
+
+  .neon-border {
+    @apply border border-neon-cyan/30 shadow-neon-cyan;
+  }
+
+  .neon-text-cyan {
+    color: #00f0ff;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.8), 0 0 20px rgba(0, 240, 255, 0.5);
+  }
+
+  .neon-text-pink {
+    color: #ff00aa;
+    text-shadow: 0 0 10px rgba(255, 0, 170, 0.8), 0 0 20px rgba(255, 0, 170, 0.5);
+  }
+
+  .neon-text-green {
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.8), 0 0 20px rgba(0, 255, 136, 0.5);
+  }
+
+  .btn-neon {
+    @apply px-6 py-2.5 rounded-lg font-display font-semibold transition-all duration-300;
+    @apply bg-neon-cyan/10 border border-neon-cyan/50 text-neon-cyan;
+    @apply hover:bg-neon-cyan/20 hover:border-neon-cyan hover:shadow-neon-cyan;
+    @apply active:scale-95;
+  }
+
+  .btn-neon-pink {
+    @apply px-6 py-2.5 rounded-lg font-display font-semibold transition-all duration-300;
+    @apply bg-neon-pink/10 border border-neon-pink/50 text-neon-pink;
+    @apply hover:bg-neon-pink/20 hover:border-neon-pink hover:shadow-neon-pink;
+    @apply active:scale-95;
+  }
+
+  .btn-neon-green {
+    @apply px-6 py-2.5 rounded-lg font-display font-semibold transition-all duration-300;
+    @apply bg-neon-green/10 border border-neon-green/50 text-neon-green;
+    @apply hover:bg-neon-green/20 hover:border-neon-green hover:shadow-neon-green;
+    @apply active:scale-95;
+  }
+
+  .btn-neon-danger {
+    @apply px-6 py-2.5 rounded-lg font-display font-semibold transition-all duration-300;
+    @apply bg-neon-red/10 border border-neon-red/50 text-neon-red;
+    @apply hover:bg-neon-red/20 hover:border-neon-red hover:shadow-neon-red;
+    @apply active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-mono text-sm transition-all duration-200;
+    @apply text-gray-400 hover:text-neon-cyan hover:bg-neon-cyan/10;
+  }
+
+  .input-neon {
+    @apply w-full px-4 py-2.5 rounded-lg bg-bg-dark/80 border border-border;
+    @apply text-white placeholder-gray-500 font-mono text-sm;
+    @apply focus:outline-none focus:border-neon-cyan focus:shadow-neon-cyan;
+    @apply transition-all duration-200;
+  }
+
+  .select-neon {
+    @apply w-full px-4 py-2.5 rounded-lg bg-bg-dark/80 border border-border;
+    @apply text-white font-mono text-sm cursor-pointer;
+    @apply focus:outline-none focus:border-neon-cyan focus:shadow-neon-cyan;
+    @apply transition-all duration-200;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer;
+    @apply text-gray-400 transition-all duration-200;
+    @apply hover:bg-neon-cyan/10 hover:text-neon-cyan;
+  }
+
+  .sidebar-item.active {
+    @apply bg-neon-cyan/20 text-neon-cyan border-l-2 border-neon-cyan;
+  }
+
+  .status-badge {
+    @apply px-3 py-1 rounded-full text-xs font-semibold font-display uppercase tracking-wider;
+  }
+
+  .status-draft {
+    @apply bg-gray-500/20 text-gray-400 border border-gray-500/30;
+  }
+
+  .status-reviewing {
+    @apply bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/30;
+  }
+
+  .status-completed {
+    @apply bg-neon-green/20 text-neon-green border border-neon-green/30;
+  }
+
+  .scrollbar-neon::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-neon::-webkit-scrollbar-track {
+    background: rgba(10, 10, 31, 0.5);
+  }
+
+  .scrollbar-neon::-webkit-scrollbar-thumb {
+    background: rgba(0, 240, 255, 0.3);
+    border-radius: 4px;
+  }
+
+  .scrollbar-neon::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 240, 255, 0.6);
+  }
+
+  .note-tap {
+    background: linear-gradient(135deg, #00f0ff, #0088ff);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .note-hold {
+    background: linear-gradient(135deg, #00ff88, #00cc66);
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .note-slide {
+    background: linear-gradient(135deg, #ff00aa, #cc0088);
+    box-shadow: 0 0 10px rgba(255, 0, 170, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .note-swing {
+    background: linear-gradient(135deg, #ffcc00, #ff9900);
+    box-shadow: 0 0 10px rgba(255, 204, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+}
+
+@layer utilities {
+  .text-shadow-neon {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+
+  .grid-bg {
+    background-image: 
+      linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .animate-scan-line::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.5), transparent);
+    animation: scan-line 3s linear infinite;
+  }
+}
